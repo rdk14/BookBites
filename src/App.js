@@ -7,7 +7,7 @@ fontLink.href =
   "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap";
 document.head.appendChild(fontLink);
 
-// ── PDF.js loaded via CDN script tag (avoids CRA worker issues) ───────────────
+// ── PDF.js loaded via CDN script tag ─────────────────────────────────────────
 function loadPdfJs() {
   return new Promise((resolve) => {
     if (window.pdfjsLib) return resolve(window.pdfjsLib);
@@ -24,14 +24,14 @@ function loadPdfJs() {
 
 // ── Palette & card themes ─────────────────────────────────────────────────────
 const CARD_THEMES = [
-  { bg: "#0d0d0d", accent: "#f5c842", text: "#f0ece4", sub: "#888" },
-  { bg: "#1a0a2e", accent: "#c77dff", text: "#e8d5ff", sub: "#8a6aaa" },
-  { bg: "#042a2b", accent: "#5eb1bf", text: "#dff6f0", sub: "#5a8c8c" },
-  { bg: "#1c1c1e", accent: "#ff6b6b", text: "#fff0f0", sub: "#888" },
-  { bg: "#0a1628", accent: "#4ecdc4", text: "#e0f7f6", sub: "#4a7a78" },
-  { bg: "#2d1515", accent: "#ff9a3c", text: "#fff4e8", sub: "#8a5a3a" },
-  { bg: "#141414", accent: "#a8e063", text: "#f0ffe4", sub: "#5a7a40" },
-  { bg: "#1a1a2e", accent: "#e94560", text: "#ffe0e8", sub: "#8a4060" },
+  { bg: "#0d0d0d", accent: "#f5c842", text: "#f0ece4" },
+  { bg: "#1a0a2e", accent: "#c77dff", text: "#e8d5ff" },
+  { bg: "#042a2b", accent: "#5eb1bf", text: "#dff6f0" },
+  { bg: "#1c1c1e", accent: "#ff6b6b", text: "#fff0f0" },
+  { bg: "#0a1628", accent: "#4ecdc4", text: "#e0f7f6" },
+  { bg: "#2d1515", accent: "#ff9a3c", text: "#fff4e8" },
+  { bg: "#141414", accent: "#a8e063", text: "#f0ffe4" },
+  { bg: "#1a1a2e", accent: "#e94560", text: "#ffe0e8" },
 ];
 
 const TYPE_ICONS = {
@@ -43,22 +43,42 @@ const TYPE_ICONS = {
   stat: "◆",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Claude API call ───────────────────────────────────────────────────────────
 async function callClaude(prompt, systemPrompt) {
+  const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "Missing API key. Add REACT_APP_ANTHROPIC_KEY to your Vercel environment variables and redeploy."
+    );
+  }
+
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
+      model: "claude-3-5-sonnet-20241022",
+      max_tokens: 1500,
       system: systemPrompt,
       messages: [{ role: "user", content: prompt }],
     }),
   });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `API error ${res.status}`);
+  }
+
   const data = await res.json();
   return data.content?.map((b) => b.text || "").join("") || "";
 }
 
+// ── PDF text extraction ───────────────────────────────────────────────────────
 async function extractPdfText(file) {
   const pdfjsLib = await loadPdfJs();
   const buf = await file.arrayBuffer();
@@ -72,13 +92,14 @@ async function extractPdfText(file) {
   return fullText;
 }
 
+// ── Chapter detection ─────────────────────────────────────────────────────────
 async function detectChapters(text) {
   const sample = text.slice(0, 15000);
   const raw = await callClaude(
     `Analyze this book text and identify the chapters/sections. Return ONLY a JSON array like:
 [{"title":"Chapter 1: The Beginning","startHint":"first few words of chapter"},...]
 Identify up to 15 chapters. Text sample:\n\n${sample}`,
-    "You are a book analysis expert. Return only valid JSON, no markdown."
+    "You are a book analysis expert. Return only valid JSON, no markdown backticks."
   );
   try {
     const clean = raw.replace(/```json|```/g, "").trim();
@@ -88,6 +109,7 @@ Identify up to 15 chapters. Text sample:\n\n${sample}`,
   }
 }
 
+// ── Card generation per chapter ───────────────────────────────────────────────
 async function generateCardsForChapter(chapterTitle, chapterText, chapterIndex) {
   const truncated = chapterText.slice(0, 10000);
   const raw = await callClaude(
@@ -101,10 +123,10 @@ Return ONLY a JSON array of exactly 6 cards:
   "type": "insight|quote|concept|takeaway|story|stat",
   "headline": "Short punchy headline (max 8 words)",
   "body": "Core idea in 2-3 sentences. Dense, informative, no fluff.",
-  "detail": "1 extra sentence with specific example or nuance.",
+  "detail": "1 extra sentence with a specific example or nuance.",
   "tag": "one-word topic tag"
 }]`,
-    "You are an expert at distilling books into memorable, insight-dense cards. Return only valid JSON."
+    "You are an expert at distilling books into memorable, insight-dense cards. Return only valid JSON, no markdown backticks."
   );
   try {
     const clean = raw.replace(/```json|```/g, "").trim();
@@ -139,25 +161,15 @@ const styles = `
   }
 
   .app-shell {
-    min-height: 100vh;
-    background: #080808;
-    color: #f0ece4;
+    min-height: 100vh; background: #080808; color: #f0ece4;
     font-family: 'DM Sans', sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+    display: flex; flex-direction: column; align-items: center;
   }
 
   .upload-screen {
-    width: 100%;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 20px;
-    position: relative;
-    overflow: hidden;
+    width: 100%; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px 20px; position: relative; overflow: hidden;
   }
   .upload-bg {
     position: absolute; inset: 0;
@@ -169,82 +181,65 @@ const styles = `
     background-image:
       linear-gradient(rgba(197,125,255,0.04) 1px, transparent 1px),
       linear-gradient(90deg, rgba(197,125,255,0.04) 1px, transparent 1px);
-    background-size: 60px 60px;
-    z-index: 0;
+    background-size: 60px 60px; z-index: 0;
   }
   .upload-content { position: relative; z-index: 1; text-align: center; max-width: 580px; }
 
   .brand-badge {
     display: inline-flex; align-items: center; gap: 8px;
-    background: rgba(197,125,255,0.12);
-    border: 1px solid rgba(197,125,255,0.25);
-    border-radius: 100px;
-    padding: 6px 16px;
-    font-family: 'Space Mono', monospace;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    color: #c77dff;
-    text-transform: uppercase;
-    margin-bottom: 32px;
+    background: rgba(197,125,255,0.12); border: 1px solid rgba(197,125,255,0.25);
+    border-radius: 100px; padding: 6px 16px;
+    font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.12em;
+    color: #c77dff; text-transform: uppercase; margin-bottom: 32px;
   }
   .brand-dot { width: 6px; height: 6px; background: #c77dff; border-radius: 50%; animation: pulse 2s infinite; }
 
   .upload-title {
-    font-family: 'Playfair Display', serif;
-    font-size: clamp(42px, 8vw, 72px);
-    font-weight: 900;
-    line-height: 1.0;
-    color: #f0ece4;
-    margin-bottom: 8px;
+    font-family: 'Playfair Display', serif; font-size: clamp(42px, 8vw, 72px);
+    font-weight: 900; line-height: 1.0; color: #f0ece4; margin-bottom: 8px;
   }
   .upload-title em { font-style: italic; color: #c77dff; }
-  .upload-subtitle {
-    font-size: 17px;
-    color: #888;
-    margin-bottom: 48px;
-    line-height: 1.6;
-    font-weight: 300;
-  }
+  .upload-subtitle { font-size: 17px; color: #888; margin-bottom: 48px; line-height: 1.6; font-weight: 300; }
 
   .drop-zone {
-    border: 1.5px dashed rgba(197,125,255,0.35);
-    border-radius: 20px;
-    padding: 48px 40px;
-    cursor: pointer;
-    transition: all 0.25s;
+    border: 1.5px dashed rgba(197,125,255,0.35); border-radius: 20px;
+    padding: 48px 40px; cursor: pointer; transition: all 0.25s;
     background: rgba(197,125,255,0.03);
   }
   .drop-zone:hover, .drop-zone.drag-over {
-    border-color: #c77dff;
-    background: rgba(197,125,255,0.08);
-    transform: scale(1.01);
+    border-color: #c77dff; background: rgba(197,125,255,0.08); transform: scale(1.01);
   }
   .drop-zone-icon { font-size: 48px; margin-bottom: 16px; display: block; }
-  .drop-zone-title {
-    font-family: 'Playfair Display', serif;
-    font-size: 22px; font-weight: 700; color: #f0ece4; margin-bottom: 8px;
-  }
+  .drop-zone-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: #f0ece4; margin-bottom: 8px; }
   .drop-zone-sub { font-size: 14px; color: #666; }
   .drop-zone input { display: none; }
 
   .feature-pills { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 32px; }
-  .feature-pill {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 100px; padding: 8px 16px; font-size: 13px; color: #aaa;
-  }
+  .feature-pill { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 100px; padding: 8px 16px; font-size: 13px; color: #aaa; }
 
   .processing-screen {
-    width: 100%; min-height: 100vh;
-    display: flex; flex-direction: column;
+    width: 100%; min-height: 100vh; display: flex; flex-direction: column;
     align-items: center; justify-content: center; padding: 40px 20px;
     background: radial-gradient(ellipse 80% 60% at 50% 20%, #0a1628 0%, #080808 70%);
   }
-  .processing-book { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 700; color: #4ecdc4; margin-bottom: 8px; }
+  .processing-book { font-family: 'Playfair Display', serif; font-size: 28px; font-weight: 700; color: #4ecdc4; margin-bottom: 8px; text-align: center; max-width: 400px; }
   .processing-sub { font-size: 14px; color: #666; margin-bottom: 48px; }
   .progress-track { width: 320px; height: 2px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; margin-bottom: 16px; }
   .progress-fill { height: 100%; background: linear-gradient(90deg, #4ecdc4, #c77dff); border-radius: 2px; transition: width 0.5s ease; }
-  .progress-label { font-family: 'Space Mono', monospace; font-size: 12px; color: #4ecdc4; }
+  .progress-label { font-family: 'Space Mono', monospace; font-size: 12px; color: #4ecdc4; text-align: center; max-width: 320px; }
+
+  .error-banner {
+    background: rgba(255,80,80,0.1); border: 1px solid rgba(255,80,80,0.3);
+    border-radius: 14px; padding: 20px 24px; margin-top: 28px;
+    max-width: 400px; text-align: center; font-size: 13px; color: #ff9090; line-height: 1.7;
+  }
+  .error-banner strong { display: block; font-size: 15px; margin-bottom: 6px; color: #ffaaaa; }
+  .retry-btn {
+    margin-top: 14px; background: rgba(255,80,80,0.15); border: 1px solid rgba(255,80,80,0.35);
+    border-radius: 8px; padding: 9px 22px; color: #ff9090; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; transition: all 0.2s;
+  }
+  .retry-btn:hover { background: rgba(255,80,80,0.25); }
 
   .chapter-list { margin-top: 40px; width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 8px; }
   .chapter-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: rgba(255,255,255,0.03); border-radius: 10px; font-size: 13px; }
@@ -257,24 +252,15 @@ const styles = `
   .reader-header {
     position: sticky; top: 0; z-index: 100;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 24px;
-    background: rgba(8,8,8,0.92); backdrop-filter: blur(20px);
+    padding: 16px 24px; background: rgba(8,8,8,0.92); backdrop-filter: blur(20px);
     border-bottom: 1px solid rgba(255,255,255,0.06);
   }
   .reader-book-title { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; color: #f0ece4; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .reader-progress-text { font-family: 'Space Mono', monospace; font-size: 11px; color: #666; }
-  .new-book-btn {
-    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px; padding: 7px 14px; font-size: 12px; color: #aaa;
-    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s;
-  }
+  .new-book-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 7px 14px; font-size: 12px; color: #aaa; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.2s; }
   .new-book-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-  .stats-bar {
-    display: flex; background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06); border-radius: 14px;
-    overflow: hidden; margin: 16px 24px 0;
-  }
+  .stats-bar { display: flex; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; overflow: hidden; margin: 16px 24px 0; }
   .stat-item { flex: 1; text-align: center; padding: 14px 8px; border-right: 1px solid rgba(255,255,255,0.06); }
   .stat-item:last-child { border-right: none; }
   .stat-num { font-family: 'Space Mono', monospace; font-size: 20px; font-weight: 700; color: #c77dff; display: block; }
@@ -282,56 +268,35 @@ const styles = `
 
   .chapter-nav { display: flex; gap: 8px; overflow-x: auto; padding: 16px 24px 0; scrollbar-width: none; background: #080808; }
   .chapter-nav::-webkit-scrollbar { display: none; }
-  .chapter-nav-pill {
-    flex-shrink: 0; padding: 8px 16px; border-radius: 100px;
-    font-size: 12px; font-weight: 500; cursor: pointer;
-    border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #666;
-    transition: all 0.2s; white-space: nowrap; font-family: 'DM Sans', sans-serif;
-  }
+  .chapter-nav-pill { flex-shrink: 0; padding: 8px 16px; border-radius: 100px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #666; transition: all 0.2s; white-space: nowrap; font-family: 'DM Sans', sans-serif; }
   .chapter-nav-pill.active { background: #c77dff; border-color: #c77dff; color: #fff; }
   .chapter-nav-pill:hover:not(.active) { border-color: #555; color: #aaa; }
 
-  .cards-feed {
-    flex: 1; padding: 24px 16px 80px;
-    display: flex; flex-direction: column; align-items: center; gap: 20px;
-    max-width: 480px; margin: 0 auto; width: 100%;
-  }
+  .cards-feed { flex: 1; padding: 24px 16px 80px; display: flex; flex-direction: column; align-items: center; gap: 20px; max-width: 480px; margin: 0 auto; width: 100%; }
 
-  .book-card { width: 100%; border-radius: 24px; overflow: hidden; position: relative; animation: cardIn 0.5s ease both; cursor: pointer; }
-  .card-inner { padding: 32px 28px 28px; min-height: 320px; display: flex; flex-direction: column; position: relative; }
-  .card-content { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; }
-
+  .book-card { width: 100%; border-radius: 24px; overflow: hidden; position: relative; animation: cardIn 0.5s ease both; }
+  .card-inner { padding: 32px 28px 28px; min-height: 320px; display: flex; flex-direction: column; }
+  .card-content { flex: 1; display: flex; flex-direction: column; }
   .card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-  .card-type-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px;
-    border-radius: 100px; font-family: 'Space Mono', monospace;
-    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
-  }
+  .card-type-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 100px; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
   .card-chapter-num { font-family: 'Space Mono', monospace; font-size: 11px; opacity: 0.4; }
   .card-icon { font-size: 40px; margin-bottom: 16px; display: block; line-height: 1; }
   .card-headline { font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 900; line-height: 1.15; margin-bottom: 16px; letter-spacing: -0.02em; }
   .card-body { font-size: 15px; line-height: 1.65; opacity: 0.82; font-weight: 300; margin-bottom: 12px; }
-  .card-detail { font-size: 13px; line-height: 1.6; opacity: 0.5; font-weight: 400; font-style: italic; }
-
+  .card-detail { font-size: 13px; line-height: 1.6; opacity: 0.5; font-style: italic; }
   .card-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); }
   .card-tag { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.5; }
   .card-save-btn { background: rgba(255,255,255,0.08); border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: inherit; transition: all 0.2s; font-family: 'DM Sans', sans-serif; }
   .card-save-btn:hover { background: rgba(255,255,255,0.15); }
   .card-save-btn.saved { background: rgba(255,255,255,0.15); }
 
-  .chapter-divider { width: 100%; text-align: center; padding: 8px 0; animation: fadeUp 0.4s ease; }
+  .chapter-divider { width: 100%; text-align: center; padding: 8px 0; }
   .chapter-divider-label { display: inline-block; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 100px; padding: 8px 20px; font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.1em; color: #666; text-transform: uppercase; }
 
   .empty-state { text-align: center; padding: 60px 20px; color: #444; }
   .empty-state h3 { font-family: 'Playfair Display', serif; font-size: 22px; color: #666; margin-bottom: 8px; }
 
-  .saved-fab {
-    position: fixed; bottom: 28px; right: 24px;
-    background: #c77dff; border: none; border-radius: 100px;
-    padding: 12px 20px; display: flex; align-items: center; gap: 8px;
-    font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; color: #fff;
-    cursor: pointer; z-index: 200; box-shadow: 0 8px 32px rgba(199,125,255,0.4); transition: all 0.2s;
-  }
+  .saved-fab { position: fixed; bottom: 28px; right: 24px; background: #c77dff; border: none; border-radius: 100px; padding: 12px 20px; display: flex; align-items: center; gap: 8px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; color: #fff; cursor: pointer; z-index: 200; box-shadow: 0 8px 32px rgba(199,125,255,0.4); transition: all 0.2s; }
   .saved-fab:hover { transform: scale(1.04); }
   .saved-count { background: rgba(0,0,0,0.2); border-radius: 100px; padding: 2px 8px; font-size: 12px; }
 
@@ -345,10 +310,9 @@ const styles = `
 function BookCard({ card, index, savedIds, onToggleSave }) {
   const { theme } = card;
   const isSaved = savedIds.has(card.id);
-  const delay = (index % 10) * 0.05;
 
   return (
-    <div className="book-card" style={{ animationDelay: `${delay}s`, background: theme.bg }}>
+    <div className="book-card" style={{ animationDelay: `${(index % 10) * 0.05}s`, background: theme.bg }}>
       <div className="card-inner">
         <div className="card-content">
           <div className="card-top">
@@ -385,6 +349,7 @@ export default function App() {
   const [allCards, setAllCards] = useState([]);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [savedIds, setSavedIds] = useState(new Set());
   const [showSaved, setShowSaved] = useState(false);
   const [activeChapter, setActiveChapter] = useState(null);
@@ -397,47 +362,69 @@ export default function App() {
     return () => s.remove();
   }, []);
 
+  const resetToUpload = () => {
+    setScreen("upload");
+    setAllCards([]);
+    setChapters([]);
+    setErrorMsg("");
+    setProgress(0);
+    setProgressLabel("");
+  };
+
   const processFile = useCallback(async (file) => {
     if (!file || file.type !== "application/pdf") return;
+    setErrorMsg("");
     setBookTitle(file.name.replace(".pdf", ""));
     setScreen("processing");
     setProgress(5);
     setProgressLabel("Extracting text from PDF…");
+    setAllCards([]);
+    setChapters([]);
 
     let pdfText;
     try {
       pdfText = await extractPdfText(file);
     } catch (e) {
-      setProgressLabel("Error reading PDF. Try another file.");
+      setErrorMsg("Could not read this PDF. Make sure it's a text-based PDF (not a scanned image).");
       return;
     }
 
     setProgress(15);
     setProgressLabel("Detecting chapters…");
-    const detectedChapters = await detectChapters(pdfText);
-    setChapters(detectedChapters);
 
+    let detectedChapters;
+    try {
+      detectedChapters = await detectChapters(pdfText);
+    } catch (e) {
+      setErrorMsg(e.message || "Failed to connect to AI. Check your REACT_APP_ANTHROPIC_KEY in Vercel.");
+      return;
+    }
+
+    setChapters(detectedChapters);
     const initStatus = {};
     detectedChapters.forEach((_, i) => (initStatus[i] = "pending"));
     setChapterStatus(initStatus);
 
     const textLen = pdfText.length;
     const perChapter = Math.floor(textLen / detectedChapters.length);
-
     let collected = [];
+
     for (let i = 0; i < detectedChapters.length; i++) {
       setChapterStatus((s) => ({ ...s, [i]: "active" }));
-      const pct = 20 + Math.floor((i / detectedChapters.length) * 75);
-      setProgress(pct);
+      setProgress(20 + Math.floor((i / detectedChapters.length) * 75));
       setProgressLabel(`Generating cards for "${detectedChapters[i].title}"…`);
 
       const start = i * perChapter;
       const end = i === detectedChapters.length - 1 ? textLen : (i + 1) * perChapter;
-      const chapterText = pdfText.slice(start, end);
 
-      const cards = await generateCardsForChapter(detectedChapters[i].title, chapterText, i);
-      collected = [...collected, ...cards];
-      setAllCards([...collected]);
+      try {
+        const cards = await generateCardsForChapter(detectedChapters[i].title, pdfText.slice(start, end), i);
+        collected = [...collected, ...cards];
+        setAllCards([...collected]);
+      } catch (e) {
+        setErrorMsg(e.message || "API error while generating cards. Check your API key.");
+        return;
+      }
       setChapterStatus((s) => ({ ...s, [i]: "done" }));
     }
 
@@ -465,20 +452,16 @@ export default function App() {
   const visibleCards = activeChapter === null ? allCards : allCards.filter((c) => c.chapterIndex === activeChapter);
   const savedCards = allCards.filter((c) => savedIds.has(c.id));
 
-  // Upload screen
+  // ── Upload ──
   if (screen === "upload") {
     return (
       <div className="app-shell">
         <div className="upload-screen">
-          <div className="upload-bg" />
-          <div className="upload-grid" />
+          <div className="upload-bg" /><div className="upload-grid" />
           <div className="upload-content">
-            <div className="brand-badge">
-              <div className="brand-dot" />
-              BookBites AI
-            </div>
+            <div className="brand-badge"><div className="brand-dot" />BookBites AI</div>
             <h1 className="upload-title">Read Smarter,<br /><em>Not Longer</em></h1>
-            <p className="upload-subtitle">Drop any PDF book. Our AI extracts every chapter and transforms it into Instagram-style cards — zero fluff, zero lost insights.</p>
+            <p className="upload-subtitle">Drop any PDF book. AI extracts every chapter and transforms it into Instagram-style cards — zero fluff, zero lost insights.</p>
             <div className={`drop-zone ${dragOver ? "drag-over" : ""}`}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
@@ -487,7 +470,7 @@ export default function App() {
               <input ref={fileInputRef} type="file" accept="application/pdf" onChange={(e) => processFile(e.target.files[0])} />
               <span className="drop-zone-icon">📚</span>
               <div className="drop-zone-title">Drop your PDF here</div>
-              <div className="drop-zone-sub">or click to browse — any non-fiction book works great</div>
+              <div className="drop-zone-sub">or click to browse</div>
             </div>
             <div className="feature-pills">
               {["Chapter Detection", "6 Cards per Chapter", "Save Insights", "Zero Fluff"].map((f) => (
@@ -500,21 +483,27 @@ export default function App() {
     );
   }
 
-  // Processing screen
+  // ── Processing ──
   if (screen === "processing") {
     return (
       <div className="app-shell">
         <div className="processing-screen">
-          <div className="brand-badge" style={{ marginBottom: 16 }}>
-            <div className="brand-dot" />Processing
-          </div>
+          <div className="brand-badge" style={{ marginBottom: 16 }}><div className="brand-dot" />Processing</div>
           <div className="processing-book">"{bookTitle}"</div>
           <div className="processing-sub">Turning pages into insights…</div>
-          <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${progress}%` }} />
-          </div>
+          <div className="progress-track"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
           <div className="progress-label">{progress}% — {progressLabel}</div>
-          {chapters.length > 0 && (
+
+          {errorMsg && (
+            <div className="error-banner">
+              <strong>⚠ Something went wrong</strong>
+              {errorMsg}
+              <br />
+              <button className="retry-btn" onClick={resetToUpload}>← Go Back</button>
+            </div>
+          )}
+
+          {chapters.length > 0 && !errorMsg && (
             <div className="chapter-list">
               {chapters.slice(0, 8).map((ch, i) => (
                 <div key={i} className={`chapter-item ${chapterStatus[i] || "pending"}`}>
@@ -525,10 +514,7 @@ export default function App() {
                 </div>
               ))}
               {chapters.length > 8 && (
-                <div className="chapter-item pending">
-                  <span className="chapter-status">○</span>
-                  +{chapters.length - 8} more chapters…
-                </div>
+                <div className="chapter-item pending"><span className="chapter-status">○</span>+{chapters.length - 8} more…</div>
               )}
             </div>
           )}
@@ -537,14 +523,14 @@ export default function App() {
     );
   }
 
-  // Reader screen
+  // ── Reader ──
   return (
     <div className="app-shell">
       <div className="reader-screen">
         <div className="reader-header">
           <div className="reader-book-title">📚 {bookTitle}</div>
           <div className="reader-progress-text">{allCards.length} cards · {chapters.length} chapters</div>
-          <button className="new-book-btn" onClick={() => { setScreen("upload"); setAllCards([]); setChapters([]); }}>+ New Book</button>
+          <button className="new-book-btn" onClick={resetToUpload}>+ New Book</button>
         </div>
 
         <div className="stats-bar">
@@ -571,9 +557,7 @@ export default function App() {
                 <div key={card.id} style={{ width: "100%" }}>
                   {showDivider && (
                     <div className="chapter-divider">
-                      <span className="chapter-divider-label">
-                        {chapters[card.chapterIndex]?.title || `Chapter ${card.chapterIndex + 1}`}
-                      </span>
+                      <span className="chapter-divider-label">{chapters[card.chapterIndex]?.title || `Chapter ${card.chapterIndex + 1}`}</span>
                     </div>
                   )}
                   <BookCard card={card} index={idx} savedIds={savedIds} onToggleSave={toggleSave} />
@@ -593,13 +577,14 @@ export default function App() {
       {showSaved && (
         <div className="saved-drawer">
           <div className="saved-drawer-header">
-            <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>✦ Your Saved Insights</span>
+            <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700 }}>✦ Saved Insights</span>
             <button className="close-btn" onClick={() => setShowSaved(false)}>Close</button>
           </div>
           <div className="saved-drawer-body">
-            {savedCards.map((card, idx) => (
-              <BookCard key={card.id} card={card} index={idx} savedIds={savedIds} onToggleSave={toggleSave} />
-            ))}
+            {savedCards.length === 0
+              ? <div className="empty-state"><h3>Nothing saved yet</h3><p>Tap ✦ Save on any card.</p></div>
+              : savedCards.map((card, idx) => <BookCard key={card.id} card={card} index={idx} savedIds={savedIds} onToggleSave={toggleSave} />)
+            }
           </div>
         </div>
       )}
