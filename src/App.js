@@ -94,11 +94,11 @@ async function extractPdfText(file) {
 
 // ── Chapter detection ─────────────────────────────────────────────────────────
 async function detectChapters(text) {
-  const sample = text.slice(0, 15000);
+  const sample = text.slice(0, 50000);
   const raw = await callClaude(
     `Analyze this book text and identify the chapters/sections. Return ONLY a JSON array like:
 [{"title":"Chapter 1: The Beginning","startHint":"first few words of chapter"},...]
-Identify up to 15 chapters. Text sample:\n\n${sample}`,
+Identify up to 50 chapters. Text sample:\n\n${sample}`,
     "You are a book analysis expert. Return only valid JSON, no markdown backticks."
   );
   try {
