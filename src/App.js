@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+import * as pdfjsLib from 'pdfjs-dist';
 
 // ── Google Fonts ──────────────────────────────────────────────────────────────
 const fontLink = document.createElement("link");
