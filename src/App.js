@@ -427,7 +427,7 @@ export default function App() {
     let collected = [];
 
     // ── Process chapter 0 first, then show reader ──
-    setChapterStatus((s) => ({ ...s, [0]: "active" }));
+    setChapterStatus((s) => ({ ...s, 0: "active" }));
     setProgress(20);
     setProgressLabel(`Generating cards for "${detectedChapters[0].title}"…`);
 
@@ -442,7 +442,7 @@ export default function App() {
       setErrorMsg(e.message || "API error while generating cards. Check your API key.");
       return;
     }
-    setChapterStatus((s) => ({ ...s, [0]: "done" }));
+    setChapterStatus((s) => ({ ...s, 0: "done" }));
 
     // Transition to reader immediately after chapter 0 is ready
     setActiveChapter(0);
