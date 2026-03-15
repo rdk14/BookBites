@@ -43,6 +43,22 @@ const TYPE_ICONS = {
   stat: "◆",
 };
 
+// ── Google Sheets integration ─────────────────────────────────────────────────
+async function saveToGoogleSheets(bookTitle, cards) {
+  const sheetsUrl = process.env.REACT_APP_SHEETS_URL;
+  if (!sheetsUrl) return;
+  try {
+    await fetch(sheetsUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookTitle, cards }),
+    });
+  } catch (e) {
+    console.error("Sheets save failed:", e);
+  }
+}
+
 // ── Claude API call ───────────────────────────────────────────────────────────
 async function callClaude(prompt, systemPrompt) {
   const apiKey = process.env.REACT_APP_ANTHROPIC_KEY;
@@ -391,7 +407,8 @@ export default function App() {
   const processFile = useCallback(async (file) => {
     if (!file || file.type !== "application/pdf") return;
     setErrorMsg("");
-    setBookTitle(file.name.replace(".pdf", ""));
+    const bookTitle = file.name.replace(".pdf", "");
+    setBookTitle(bookTitle);
     setScreen("processing");
     setProgress(5);
     setProgressLabel("Extracting text from PDF…");
@@ -475,6 +492,7 @@ export default function App() {
 
     setProgress(100);
     setProgressLabel("Done! Your book is ready.");
+    await saveToGoogleSheets(bookTitle, collected);
   }, []);
 
   const handleDrop = useCallback((e) => {
