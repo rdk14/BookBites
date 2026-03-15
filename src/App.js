@@ -272,6 +272,21 @@ const styles = `
   .chapter-nav-pill.active { background: #c77dff; border-color: #c77dff; color: #fff; }
   .chapter-nav-pill:hover:not(.active) { border-color: #555; color: #aaa; }
 
+  @keyframes loadingPulse {
+    0%,100% { opacity: 1; transform: scaleX(1); }
+    50% { opacity: 0.5; transform: scaleX(0.97); }
+  }
+  .loading-more-indicator {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 24px 12px;
+    padding: 8px 16px; border-radius: 100px;
+    background: rgba(199,125,255,0.08); border: 1px solid rgba(199,125,255,0.2);
+    font-family: 'Space Mono', monospace; font-size: 11px; color: #c77dff;
+    animation: loadingPulse 2s ease-in-out infinite;
+    align-self: flex-start;
+  }
+  .loading-more-dot { width: 6px; height: 6px; background: #c77dff; border-radius: 50%; animation: pulse 1.2s infinite; }
+
   .cards-feed { flex: 1; padding: 24px 16px 80px; display: flex; flex-direction: column; align-items: center; gap: 20px; max-width: 480px; margin: 0 auto; width: 100%; }
 
   .book-card { width: 100%; border-radius: 24px; overflow: hidden; position: relative; animation: cardIn 0.5s ease both; }
@@ -353,6 +368,7 @@ export default function App() {
   const [savedIds, setSavedIds] = useState(new Set());
   const [showSaved, setShowSaved] = useState(false);
   const [activeChapter, setActiveChapter] = useState(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const fileInputRef = useRef();
 
   useEffect(() => {
@@ -369,6 +385,7 @@ export default function App() {
     setErrorMsg("");
     setProgress(0);
     setProgressLabel("");
+    setIsLoadingMore(false);
   };
 
   const processFile = useCallback(async (file) => {
@@ -409,30 +426,55 @@ export default function App() {
     const perChapter = Math.floor(textLen / detectedChapters.length);
     let collected = [];
 
-    for (let i = 0; i < detectedChapters.length; i++) {
-      setChapterStatus((s) => ({ ...s, [i]: "active" }));
-      setProgress(20 + Math.floor((i / detectedChapters.length) * 75));
-      setProgressLabel(`Generating cards for "${detectedChapters[i].title}"…`);
+    // ── Process chapter 0 first, then show reader ──
+    setChapterStatus((s) => ({ ...s, [0]: "active" }));
+    setProgress(20);
+    setProgressLabel(`Generating cards for "${detectedChapters[0].title}"…`);
 
-      const start = i * perChapter;
-      const end = i === detectedChapters.length - 1 ? textLen : (i + 1) * perChapter;
+    const start0 = 0;
+    const end0 = detectedChapters.length === 1 ? textLen : perChapter;
 
-      try {
-        const cards = await generateCardsForChapter(detectedChapters[i].title, pdfText.slice(start, end), i);
-        collected = [...collected, ...cards];
-        setAllCards([...collected]);
-      } catch (e) {
-        setErrorMsg(e.message || "API error while generating cards. Check your API key.");
-        return;
+    try {
+      const cards0 = await generateCardsForChapter(detectedChapters[0].title, pdfText.slice(start0, end0), 0);
+      collected = [...cards0];
+      setAllCards([...collected]);
+    } catch (e) {
+      setErrorMsg(e.message || "API error while generating cards. Check your API key.");
+      return;
+    }
+    setChapterStatus((s) => ({ ...s, [0]: "done" }));
+
+    // Transition to reader immediately after chapter 0 is ready
+    setActiveChapter(0);
+    setScreen("reader");
+
+    // ── Continue loading remaining chapters in the background ──
+    if (detectedChapters.length > 1) {
+      setIsLoadingMore(true);
+      for (let i = 1; i < detectedChapters.length; i++) {
+        setChapterStatus((s) => ({ ...s, [i]: "active" }));
+        setProgress(20 + Math.floor((i / detectedChapters.length) * 75));
+        setProgressLabel(`Generating cards for "${detectedChapters[i].title}"…`);
+
+        const start = i * perChapter;
+        const end = i === detectedChapters.length - 1 ? textLen : (i + 1) * perChapter;
+
+        try {
+          const cards = await generateCardsForChapter(detectedChapters[i].title, pdfText.slice(start, end), i);
+          collected = [...collected, ...cards];
+          setAllCards([...collected]);
+        } catch (e) {
+          setErrorMsg(e.message || "API error while generating cards. Check your API key.");
+          setIsLoadingMore(false);
+          return;
+        }
+        setChapterStatus((s) => ({ ...s, [i]: "done" }));
       }
-      setChapterStatus((s) => ({ ...s, [i]: "done" }));
+      setIsLoadingMore(false);
     }
 
     setProgress(100);
     setProgressLabel("Done! Your book is ready.");
-    await new Promise((r) => setTimeout(r, 800));
-    setActiveChapter(0);
-    setScreen("reader");
   }, []);
 
   const handleDrop = useCallback((e) => {
@@ -546,6 +588,13 @@ export default function App() {
             <button key={i} className={`chapter-nav-pill ${activeChapter === i ? "active" : ""}`} onClick={() => setActiveChapter(i)}>Ch.{i + 1}</button>
           ))}
         </div>
+
+        {isLoadingMore && (
+          <div className="loading-more-indicator">
+            <div className="loading-more-dot" />
+            Loading more chapters…
+          </div>
+        )}
 
         <div className="cards-feed">
           {visibleCards.length === 0 ? (
