@@ -44,11 +44,11 @@ const TYPE_ICONS = {
 };
 
 // ── Google Sheets integration ─────────────────────────────────────────────────
-async function loadFromGoogleSheets(bookTitle) {
+async function loadFromGoogleSheets(bookTitle, pdfFilename) {
   const sheetsUrl = process.env.REACT_APP_SHEETS_URL;
   if (!sheetsUrl) return null;
   try {
-    const url = `${sheetsUrl}?bookTitle=${encodeURIComponent(bookTitle)}`;
+    const url = `${sheetsUrl}?bookTitle=${encodeURIComponent(bookTitle)}${pdfFilename ? `&pdfFilename=${encodeURIComponent(pdfFilename)}` : ""}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
@@ -59,7 +59,7 @@ async function loadFromGoogleSheets(bookTitle) {
   }
 }
 
-async function saveToGoogleSheets(bookTitle, cards) {
+async function saveToGoogleSheets(bookTitle, pdfFilename, cards) {
   const sheetsUrl = process.env.REACT_APP_SHEETS_URL;
   if (!sheetsUrl) return;
   try {
@@ -67,7 +67,7 @@ async function saveToGoogleSheets(bookTitle, cards) {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bookTitle, cards }),
+      body: JSON.stringify({ bookTitle, pdfFilename, cards }),
     });
   } catch (e) {
     console.error("Sheets save failed:", e);
@@ -422,7 +422,8 @@ export default function App() {
   const processFile = useCallback(async (file) => {
     if (!file || file.type !== "application/pdf") return;
     setErrorMsg("");
-    const bookTitle = file.name.replace(".pdf", "");
+    const pdfFilename = file.name;
+    const bookTitle = pdfFilename.replace(/\.pdf$/i, "").trim();
     setBookTitle(bookTitle);
     setScreen("processing");
     setProgress(5);
@@ -430,7 +431,7 @@ export default function App() {
     setAllCards([]);
     setChapters([]);
 
-    const existingCards = await loadFromGoogleSheets(bookTitle);
+    const existingCards = await loadFromGoogleSheets(bookTitle, pdfFilename);
     if (existingCards) {
       const uniqueChapters = [
         ...new Map(existingCards.map((c) => [c.chapter, { title: c.chapter }])).values(),
@@ -526,7 +527,7 @@ export default function App() {
 
     setProgress(100);
     setProgressLabel("Done! Your book is ready.");
-    await saveToGoogleSheets(bookTitle, collected);
+    await saveToGoogleSheets(bookTitle, pdfFilename, collected);
   }, []);
 
   const handleDrop = useCallback((e) => {
