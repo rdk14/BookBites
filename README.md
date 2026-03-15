@@ -1,4 +1,54 @@
-# Getting Started with Create React App
+# BookBites
+
+BookBites is a React app that turns PDF books into bite-sized AI-generated insight cards. It uses Claude AI to detect chapters and generate cards, and Google Sheets as an optional cache so a book only needs to be processed once.
+
+---
+
+## Google Sheets Setup (required for caching)
+
+The `google-apps-script/Code.gs` file in this repository is a Google Apps Script web app that acts as the backend for the Google Sheets cache.
+
+### Steps
+
+1. **Create a Google Sheet.**
+
+2. **Open the Apps Script editor.**  
+   Inside the sheet go to **Extensions → Apps Script**.
+
+3. **Paste the script.**  
+   Replace any existing code in `Code.gs` with the contents of `google-apps-script/Code.gs` from this repo.
+
+4. **Deploy as a Web App.**
+   - Click **Deploy → New deployment**.
+   - Type: **Web App**.
+   - Execute as: **Me**.
+   - Who has access: **Anyone**.
+   - Click **Deploy** and copy the URL (looks like `https://script.google.com/macros/s/…/exec`).
+
+5. **Set the environment variable.**  
+   Add `REACT_APP_SHEETS_URL=<your-deployment-url>` to your Vercel project (or `.env.local` for local dev) and redeploy.
+
+### How the script works
+
+| Request | What it does |
+|---------|-------------|
+| `GET ?bookTitle=…&pdfFilename=…` | Returns `{ cards: […] }` if a matching row exists (matches by **bookTitle OR pdfFilename**, case-insensitive). Returns `{ cards: [] }` when nothing is found. |
+| `POST { bookTitle, pdfFilename, cards }` | Saves a new row, or updates an existing match. |
+
+The sheet is created automatically with columns: `bookTitle`, `pdfFilename`, `cards` (JSON), `savedAt`.
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `REACT_APP_ANTHROPIC_KEY` | Yes | Anthropic API key for Claude |
+| `REACT_APP_SHEETS_URL` | Optional | Google Apps Script web app URL (enables caching) |
+
+---
+
+## Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
