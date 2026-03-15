@@ -1,8 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders upload screen with BookBites branding', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText(/BookBites AI/i)).toBeInTheDocument();
+});
+
+test('renders upload screen drop zone', () => {
+  render(<App />);
+  expect(screen.getByText(/Drop your PDF here/i)).toBeInTheDocument();
 });
