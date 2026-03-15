@@ -63,7 +63,7 @@ async function callClaude(prompt, systemPrompt) {
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 4000,
+      max_tokens: 3000,
       system: systemPrompt,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -118,7 +118,7 @@ async function generateCardsForChapter(chapterTitle, chapterText, chapterIndex) 
 Chapter: "${chapterTitle}"
 Content: ${truncated}
 
-Return ONLY a JSON array of 10-15 cards:
+Return ONLY a JSON array of 10 cards:
 [{
   "type": "insight|quote|concept|takeaway|story|stat",
   "headline": "Short punchy headline (max 8 words)",
