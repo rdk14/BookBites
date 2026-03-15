@@ -44,6 +44,21 @@ const TYPE_ICONS = {
 };
 
 // ── Google Sheets integration ─────────────────────────────────────────────────
+async function loadFromGoogleSheets(bookTitle) {
+  const sheetsUrl = process.env.REACT_APP_SHEETS_URL;
+  if (!sheetsUrl) return null;
+  try {
+    const url = `${sheetsUrl}?bookTitle=${encodeURIComponent(bookTitle)}`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.cards?.length > 0 ? data.cards : null;
+  } catch (e) {
+    console.error("Sheets load failed:", e);
+    return null;
+  }
+}
+
 async function saveToGoogleSheets(bookTitle, cards) {
   const sheetsUrl = process.env.REACT_APP_SHEETS_URL;
   if (!sheetsUrl) return;
@@ -411,9 +426,28 @@ export default function App() {
     setBookTitle(bookTitle);
     setScreen("processing");
     setProgress(5);
-    setProgressLabel("Extracting text from PDF…");
+    setProgressLabel("Checking for existing cards in Google Sheets…");
     setAllCards([]);
     setChapters([]);
+
+    const existingCards = await loadFromGoogleSheets(bookTitle);
+    if (existingCards) {
+      const uniqueChapters = [
+        ...new Map(existingCards.map((c) => [c.chapter, { title: c.chapter }])).values(),
+      ];
+      setChapters(uniqueChapters);
+      const statusMap = {};
+      uniqueChapters.forEach((_, i) => { statusMap[i] = "done"; });
+      setChapterStatus(statusMap);
+      setAllCards(existingCards);
+      setActiveChapter(0);
+      setProgress(100);
+      setProgressLabel("Loaded from Google Sheets!");
+      setScreen("reader");
+      return;
+    }
+
+    setProgressLabel("Extracting text from PDF…");
 
     let pdfText;
     try {
@@ -527,7 +561,7 @@ export default function App() {
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current.click()}>
-              <input ref={fileInputRef} type="file" accept="application/pdf" onChange={(e) => processFile(e.target.files[0])} />
+              <input ref={fileInputRef} type="file" accept="application/pdf" data-testid="file-input" onChange={(e) => processFile(e.target.files[0])} />
               <span className="drop-zone-icon">📚</span>
               <div className="drop-zone-title">Drop your PDF here</div>
               <div className="drop-zone-sub">or click to browse</div>
